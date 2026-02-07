@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} | Top Stories{% endblock %}
+
+{% block content %}
+<div id="page-skeleton" class="skeleton-container">
+  <div class="row mb-5">
+    <div class="col-12">
+      <div class="featured-skeleton skeleton"></div>
+    </div>
+  </div>
+  <div class="row g-4 mb-5">
+    {% for i in range(6) %}<div class="col-md-6 col-lg-4 mb-3">
+      <div class="news-card skeleton" style="height: 400px;"></div>
+    </div>{% endfor %}
+  </div>
+</div>
+
+<div id="main-content">
+  <div class="row mb-4">
+    <div class="col-12">
+      <h1 class="display-6 fw-bold mb-0 fade-in-up">{{ heading }}</h1>
+    </div>
+  </div>
+
+  <div id="hero-section">
+    {% if articles %}
+    {% set featured = articles[0] %}
+    <div class="row mb-5 fade-in-up">
+      <div class="col-12">
+        <div class="news-card featured-card shadow-lg" data-article="{{ featured | tojson | e }}"
+          onclick="openArticleDetail(JSON.parse(this.dataset.article))">
+          <div class="news-image-wrapper h-100">
+            <button class="bookmark-btn"
+              onclick="event.stopPropagation(); toggleBookmark(JSON.parse(this.closest('.news-card').dataset.article), this)">🔖</button>
+            <img src="{{ featured.urlToImage or 'https://via.placeholder.com/1200x600?text=NewsFlash' }}"
+              class="news-image" onload="this.classList.add('loaded')">
+            <span class="card-badge">{{ featured.source.name }}</span>
+            <span class="trending-badge">Headliner</span>
+          </div>
+          <div class="featured-content">
+            <h2 class="display-5 fw-bold mb-3">{{ featured.title }}</h2>
+            <p class="opacity-75 mb-4 fs-5 d-none d-md-block">{{ featured.description or 'Breaking update on this
+              story.' }}</p>
+            <div class="mt-auto">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="small opacity-50 relative-time" data-time="{{ featured.publishedAt }}">Recent</span>
+                <span class="btn btn-premium">Read Full Story</span>
+              </div>
+              <button class="btn btn-sm btn-ai w-100 py-2 mb-2"
+                onclick="event.stopPropagation(); generateSummary(JSON.parse(this.closest('.news-card').dataset.article), this)">
+                <span class="ai-spinner"></span>
+                <span class="btn-text">✨ AI Summary</span>
+              </button>
+              <div class="summary-container">
+                <p class="summary-text"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="row g-4 mb-5" id="news-grid">
+    {% if articles %}
+    {% for art in articles[1:] %}
+    <div class="col-md-6 col-lg-4 mb-3 fade-in-up" data-delay="{{ loop.index0 * 0.05 + 0.1 }}s">
+      <div class="news-card shadow-sm h-100" data-article="{{ art | tojson | e }}"
+        onclick="openArticleDetail(JSON.parse(this.dataset.article))">
+        <div class="news-image-wrapper">
+          <button class="bookmark-btn"
+            onclick="event.stopPropagation(); toggleBookmark(JSON.parse(this.closest('.news-card').dataset.article), this)">🔖</button>
+          <img src="{{ art.urlToImage or 'https://via.placeholder.com/400x220?text=NewsFlash' }}" class="news-image"
+            onload="this.classList.add('loaded')">
+          <span class="card-badge">{{ art.source.name }}</span>
+        </div>
+        <div class="card-body p-4 d-flex flex-column">
+          <h5 class="card-title">{{ art.title }}</h5>
+          <p class="card-text mb-4">{{ art.description or '' }}</p>
+          <div class="mt-auto">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <span class="small opacity-50 relative-time" data-time="{{ art.publishedAt }}">Recent</span>
+              <span class="btn btn-premium btn-sm">Read Article</span>
+            </div>
+            <button class="btn btn-sm btn-ai w-100 py-2"
+              onclick="event.stopPropagation(); generateSummary(JSON.parse(this.closest('.news-card').dataset.article), this)">
+              <span class="ai-spinner"></span>
+              <span class="btn-text">✨ AI Summary</span>
+            </button>
+            <div class="summary-container">
+              <p class="summary-text"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="col-12 text-center py-5 glass rounded-4" id="empty-state">
+      <h3 class="fw-bold">Feed Quiet</h3>
+      <p class="opacity-50">No stories found. Try another coordinate or refresh.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="load-more-container mb-5">
+    <button id="load-more-btn" class="btn btn-premium px-5 py-3 {{ 'd-none' if not articles }}" onclick="loadMore()">
+      Discover More
+    </button>
+  </div>
+</div>
+
+<script>
+  // Final verification of relative times and animation delays on load
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.relative-time').forEach(el => {
+      const timeStr = el.getAttribute('data-time');
+      if (typeof timeAgo === 'function') el.textContent = timeAgo(timeStr);
+    });
+
+    document.querySelectorAll('.fade-in-up[data-delay]').forEach(el => {
+      el.style.animationDelay = el.getAttribute('data-delay');
+    });
+  });
+</script>
+{% endblock %}

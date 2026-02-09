@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}NewsFlash | Global News Engine{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    // --- Global Configuration ---
+    let currentPage = 1;
+    let currentCategory = '{{ current_category or "general" }}';
+    let currentKeyword = '';
+    const CACHE_TTL = 10 * 60 * 1000;
+
+    const state = {
+      bookmarks: JSON.parse(localStorage.getItem('bookmarks') || '[]'),
+      theme: localStorage.getItem('theme') || 'light'
+    };
+
+    // --- Core Interaction Functions ---
+    function toggleTheme() {
+      state.theme = document.body.classList.toggle('dark-mode') ? 'dark' : 'light';
+      localStorage.setItem('theme', state.theme);
+      const icon = document.getElementById('theme-icon');
+      if (icon) icon.textContent = state.theme === 'dark' ? '☀️' : '🌙';
+    }
+
+    function toggleBookmark(article, btn) {
+      const index = state.bookmarks.findIndex(b => b.url === article.url);
+      if (index > -1) {
+        state.bookmarks.splice(index, 1);
+        btn.classList.remove('active');
+        showError("Removed from bookmarks", false);
+      } else {
+        state.bookmarks.push(article);
+        btn.classList.add('active');
+        showError("Saved to bookmarks", false);
+      }
+      localStorage.setItem('bookmarks', JSON.stringify(state.bookmarks));
+    }
+
+    function showBookmarks() {
+      currentKeyword = '';
+      currentCategory = '';
+      renderContent(state.bookmarks, "Your Bookmarked Stories");
+      const lm = document.getElementById('load-more-btn');
+      if (lm) lm.style.display = 'none';
+      window.history.pushState({ view: 'bookmarks' }, '', '/bookmarks');
+    }
+
+    function openArticleDetail(article) {
+      document.getElementById('modalTitle').textContent = article.title;
+      document.getElementById('modalSource').textContent = article.source.name;
+      document.getElementById('modalDescription').textContent = article.description || 'Full description not available.';
+      document.getElementById('modalContent').textContent = article.content ? article.content.split('[+')[0] : 'Read more at the original source.';
+      document.getElementById('modalTime').textContent = timeAgo(article.publishedAt);
+      document.getElementById('modalUrl').href = article.url;
+
+      const img = document.getElementById('modalImage');
+      if (article.urlToImage) {
+        img.src = article.urlToImage;
+        img.classList.remove('d-none');
+      } else {
+        img.classList.add('d-none');
+      }
+
+      // Reset & Check AI Summary for Modal
+      const modalBtn = document.getElementById('modalAIBtn');
+      const modalCont = document.getElementById('modalSummaryContainer');
+      const modalText = document.getElementById('modalSummaryText');
+      const cached = localStorage.getItem(`summary_${article.url}`);
+
+      modalBtn.style.display = cached ? 'none' : 'inline-flex';
+      modalCont.style.display = cached ? 'block' : 'none';
+      if (cached) modalText.textContent = cached;
+
+      modalBtn.onclick = () => generateSummary(article, modalBtn);
+
+      new bootstrap.Modal(document.getElementById('articleModal')).show();
+    }
+
+    // --- AJAX & Navigation System (The 'SPA' Engine) ---
+    async function performSearch(keyword) {
+      currentKeyword = keyword;
+      currentCategory = '';
+      currentPage = 1;
+      await fetchAndRender(`/?ajax=1`, { method: 'POST', body: new URLSearchParams({ keyword }) }, `Search: ${keyword}`);
+    }
+
+    async function navigateTo(category, isPopState = false) {
+      currentCategory = category;
+      currentKeyword = '';
+      currentPage = 1;
+
+      const cached = JSON.parse(localStorage.getItem(`cache_${category}`));
+      if (cached && (Date.now() - cached.time < CACHE_TTL)) {
+        renderContent(cached.articles, cached.heading);
+        finishNav(category, isPopState);
+        return;
+      }
+
+      await fetchAndRender(`/?category=${category}&ajax=1`, {}, category.charAt(0).toUpperCase() + category.slice(1));
+      if (!isPopState) window.history.pushState({ category }, '', `/?category=${category}`);
+    }
+
+    async function fetchAndRender(url, options = {}, headingText = "") {
+      document.body.classList.remove('loaded');
+      document.body.classList.add('navigating');
+
+      try {
+        const response = await fetch(url, options);
+        const data = await response.json();
+
+        if (currentCategory) {
+          localStorage.setItem(`cache_${currentCategory}`, JSON.stringify({
+            articles: data.articles, heading: data.heading, time: Date.now()
+          }));
+        }
+
+        renderContent(data.articles, data.heading || headingText);
+      } catch (e) {
+        showError("The news engine is stalling. Please try again.");
+      } finally {
+        document.body.classList.remove('navigating');
+        document.body.classList.add('loaded');
+        window.scrollTo(0, 0);
+      }
+    }
+
+    async function loadMore() {
+      const btn = document.getElementById('load-more-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Syncing...';
+      currentPage++;
+
+      const url = currentKeyword ? `/?ajax=1&page=${currentPage}` : `/?category=${currentCategory}&page=${currentPage}&ajax=1`;
+      const options = currentKeyword ? { method: 'POST', body: new URLSearchParams({ keyword: currentKeyword }) } : {};
+
+      try {
+        const response = await fetch(url, options);
+        const data = await response.json();
+        if (data.articles && data.articles.length) {
+          const grid = document.getElementById('news-grid');
+          data.articles.forEach((art, idx) => grid.appendChild(createArticleCard(art, idx + 1)));
+          btn.disabled = false;
+          btn.textContent = 'Stream More Stories';
+        } else {
+          btn.textContent = 'You have reached the horizon';
+          btn.classList.add('opacity-50');
+        }
+      } catch (e) {
+        showError("Sync failed. Check connection.");
+        btn.disabled = false;
+        btn.textContent = 'Retry Stream';
+      }
+    }
+
+    // --- AI Summarization ---
+    async function generateSummary(article, btn) {
+      const isModal = btn.id === 'modalAIBtn';
+      const container = isModal ? document.getElementById('modalSummaryContainer') : btn.closest('.news-card').querySelector('.summary-container');
+      const textEl = isModal ? document.getElementById('modalSummaryText') : btn.closest('.news-card').querySelector('.summary-text');
+      const spinner = btn.querySelector('.ai-spinner');
+      const btnText = btn.querySelector('.btn-text');
+
+      // Check Cache
+      const cached = localStorage.getItem(`summary_${article.url}`);
+      if (cached) {
+        textEl.textContent = cached;
+        container.style.display = 'block';
+        btn.style.display = 'none';
+        return;
+      }
+
+      // Start Loading
+      btn.disabled = true;
+      if (spinner) spinner.style.display = 'inline-block';
+      if (btnText) btnText.textContent = 'Generating...';
+      else btn.textContent = 'Syncing...';
+
+      try {
+        const response = await fetch('/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: article.title, url: article.url })
+        });
+        const data = await response.json();
+
+        if (data.summary) {
+          localStorage.setItem(`summary_${article.url}`, data.summary);
+          textEl.textContent = data.summary;
+          container.style.display = 'block';
+          btn.style.display = 'none';
+
+          // Sync any other visible elements for this article
+          syncBookmarkUI();
+        } else {
+          showError("Could not generate summary.");
+        }
+      } catch (e) {
+        showError("AI Service unavailable. Try later.");
+      } finally {
+        btn.disabled = false;
+        if (spinner) spinner.style.display = 'none';
+        if (btnText) btnText.textContent = 'AI Summary';
+      }
+    }
+
+    // --- DOM Orchestration ---
+    function renderContent(articles, headingText) {
+      const hero = document.getElementById('hero-section');
+      const grid = document.getElementById('news-grid');
+      const h1 = document.querySelector('h1.display-6');
+
+      if (h1) h1.textContent = headingText;
+
+      if (articles.length > 0) {
+        hero.innerHTML = createHeroCard(articles[0]);
+        grid.innerHTML = '';
+        articles.slice(1).forEach((art, idx) => grid.appendChild(createArticleCard(art, idx + 1)));
+        hero.style.display = 'block';
+      } else {
+        hero.style.display = 'none';
+        grid.innerHTML = '<div class="col-12 text-center py-5"><h3>The feed is empty.</h3></div>';
+      }
+
+      const lm = document.getElementById('load-more-btn');
+      if (lm) lm.style.display = 'block';
+
+      // Update Active Category UI
+      document.querySelectorAll('.category-link').forEach(l => {
+        const cat = new URL(l.href).searchParams.get('category') || 'general';
+        l.classList.toggle('active', cat === currentCategory);
+      });
+    }
+
+    function createHeroCard(art) {
+      const artJson = encodeURIComponent(JSON.stringify(art));
+      return `
+        <div class="news-card featured-card shadow-lg" 
+             data-article='${JSON.stringify(art).replace(/'/g, "&apos;")}'
+             onclick='openArticleDetail(JSON.parse(this.dataset.article))'>
+          <div class="news-image-wrapper h-100">
+            <button class="bookmark-btn ${state.bookmarks.some(b => b.url === art.url) ? 'active' : ''}" 
+                    onclick='event.stopPropagation(); toggleBookmark(JSON.parse(this.closest(".news-card").dataset.article), this)'>🔖</button>
+            <img src="${art.urlToImage || 'https://via.placeholder.com/1200x600?text=NewsFlash'}" 
+                 class="news-image loaded">
+            <span class="card-badge">${art.source.name}</span>
+            <span class="trending-badge">Top Story</span>
+          </div>
+          <div class="featured-content">
+            <h2 class="display-5 fw-bold mb-3">${art.title}</h2>
+            <p class="opacity-75 mb-4 fs-5 d-none d-md-block">${art.description || ''}</p>
+            <div class="mt-auto">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="small opacity-50">${timeAgo(art.publishedAt)}</span>
+                <span class="btn btn-premium">Read Full Story</span>
+              </div>
+              <button class="btn btn-sm btn-ai w-100 py-2 mb-2" onclick='event.stopPropagation(); generateSummary(JSON.parse(this.closest(".news-card").dataset.article), this)'>
+                <span class="ai-spinner"></span>
+                <span class="btn-text">✨ AI Summary</span>
+              </button>
+              <div class="summary-container">
+                <p class="summary-text"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function createArticleCard(art, idx = 0) {
+      const div = document.createElement('div');
+      div.className = 'col-md-6 col-lg-4 mb-3 fade-in-up';
+      div.style.animationDelay = `${(idx * 0.05)}s`;
+      const isBookmarked = state.bookmarks.some(b => b.url === art.url);
+
+      div.innerHTML = `
+        <div class="news-card shadow-sm h-100" 
+             data-article='${JSON.stringify(art).replace(/'/g, "&apos;")}'
+             onclick='openArticleDetail(JSON.parse(this.dataset.article))'>
+          <div class="news-image-wrapper">
+            <button class="bookmark-btn ${isBookmarked ? 'active' : ''}" 
+                    onclick='event.stopPropagation(); toggleBookmark(JSON.parse(this.closest(".news-card").dataset.article), this)'>🔖</button>
+            <img src="${art.urlToImage || 'https://via.placeholder.com/400x220?text=NewsFlash'}" 
+                 class="news-image loaded" onerror="this.src='https://via.placeholder.com/400x220?text=NewsFlash';">
+            <span class="card-badge">${art.source.name}</span>
+          </div>
+          <div class="card-body p-4 d-flex flex-column">
+            <h5 class="card-title">${art.title}</h5>
+            <p class="card-text mb-4">${art.description || ''}</p>
+            <div class="mt-auto">
+              <div class="d-flex justify-content-between align-items-center mb-3">
+                <span class="small opacity-50">${timeAgo(art.publishedAt)}</span>
+                <span class="btn btn-premium btn-sm">Read Article</span>
+              </div>
+              <button class="btn btn-sm btn-ai w-100 py-2" onclick='event.stopPropagation(); generateSummary(JSON.parse(this.closest(".news-card").dataset.article), this)'>
+                <span class="ai-spinner"></span>
+                <span class="btn-text">✨ AI Summary</span>
+              </button>
+              <div class="summary-container">
+                <p class="summary-text"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      return div;
+    }
+
+    function showError(msg, isError = true) {
+      const toast = document.getElementById('error-toast');
+      const message = document.getElementById('error-message');
+      toast.style.background = isError ? 'var(--accent)' : 'var(--primary)';
+      message.textContent = msg;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 4000);
+    }
+
+    function timeAgo(dateString) {
+      if (!dateString) return 'Just now';
+      const seconds = Math.floor((new Date() - new Date(dateString)) / 1000);
+      if (seconds < 60) return 'Just now';
+      if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+      if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+      return Math.floor(seconds / 86400) + 'd ago';
+    }
+    function syncBookmarkUI() {
+      const savedUrls = new Set(state.bookmarks.map(b => b.url));
+      document.querySelectorAll('.bookmark-btn').forEach(btn => {
+        const card = btn.closest('.news-card');
+        if (card && card.dataset.article) {
+          try {
+            const art = JSON.parse(card.dataset.article);
+            btn.classList.toggle('active', savedUrls.has(art.url));
+          } catch (e) { }
+        }
+      });
+    }
+
+    // --- Event Listeners ---
+    window.onpopstate = (e) => {
+      if (e.state && e.state.category) navigateTo(e.state.category, true);
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      document.body.classList.add('loaded');
+      if (state.theme === 'dark') {
+        document.body.classList.add('dark-mode');
+        const icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = '☀️';
+      }
+
+      const dateEl = document.getElementById('current-date');
+      if (dateEl) dateEl.textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+      if (typeof syncBookmarkUI === 'function') syncBookmarkUI();
+
+      if (window.location.pathname === '/bookmarks') {
+        showBookmarks();
+      }
+
+      // AJAX Category Navigation
+      document.addEventListener('click', (e) => {
+        const link = e.target.closest('.category-link, .navbar-brand');
+        if (link && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
+          e.preventDefault();
+          const url = new URL(link.href);
+          navigateTo(url.searchParams.get('category') || 'general');
+        }
+      });
+
+      // AJAX Search Interception
+      const searchForm = document.getElementById('search-form');
+      if (searchForm) {
+        searchForm.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const kw = searchForm.querySelector('input').value;
+          performSearch(kw);
+        });
+      }
+    });
+  </script>
+</head>
+
+<body>
+  <nav class="navbar glass sticky-top">
+    <div class="container">
+      <a class="navbar-brand fw-bold" href="{{ url_for('home') }}">
+        <span class="news-logo">📰 NewsFlash</span>
+      </a>
+
+      <div class="d-flex align-items-center gap-3">
+        <span id="current-date" class="d-none d-md-block small opacity-75"></span>
+
+        <form class="d-flex" id="search-form">
+          <div class="input-group">
+            <input class="form-control search-input" type="search" placeholder="Explore stories..." required>
+          </div>
+        </form>
+
+        <button class="btn btn-sm btn-premium d-none d-md-block" onclick="showBookmarks()">
+          🔖 Saved
+        </button>
+
+        <button class="btn btn-sm btn-premium" onclick="toggleTheme()" id="theme-icon">
+          🌙
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="category-bar py-2 mb-4 glass border-top border-bottom sticky-top" style="top: 72px; z-index: 1020;">
+    <div class="container overflow-auto">
+      <div class="category-nav">
+        {% for cat in ['general', 'business', 'technology', 'entertainment', 'health', 'science', 'sports'] %}
+        <a href="{{ url_for('home', category=cat) }}" class="category-link {{ 'active' if current_category == cat }}">
+          {{ cat.capitalize() }}
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <main class="container mb-5">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Detail Modal -->
+  <div class="modal fade" id="articleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content glass">
+        <div class="modal-header">
+          <h5 class="modal-title fw-bold" id="modalTitle"></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <img id="modalImage" src="" class="modal-image d-none" alt="News">
+          <p id="modalSource" class="text-primary fw-bold small text-uppercase mb-2"></p>
+          <p id="modalDescription" class="fs-5 opacity-75"></p>
+          <div id="modalContent" class="opacity-75"></div>
+
+          <div id="modalSummaryContainer" class="summary-container" style="margin-top: 1.5rem;">
+            <p id="modalSummaryText" class="summary-text"></p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <span id="modalTime" class="me-auto small opacity-50"></span>
+          <button id="modalAIBtn" class="btn btn-sm btn-ai px-3">
+            <span class="ai-spinner"></span>
+            <span class="btn-text">✨ AI Summary</span>
+          </button>
+          <a id="modalUrl" href="" target="_blank" class="btn btn-premium">Read Full Coverage</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="error-toast" class="error-toast">
+    <span id="error-message"></span>
+  </div>
+
+  <footer class="py-5 glass mt-auto border-top">
+    <div class="container text-center">
+      <p class="mb-2 fw-bold">NewsFlash X</p>
+      <p class="small opacity-50 mb-0">&copy; 2026. Editorial Excellence via Production Code.</p>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

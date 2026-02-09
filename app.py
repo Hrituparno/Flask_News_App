@@ -10,25 +10,74 @@ def home():
     page = int(request.args.get('page', 1))
     is_ajax = request.args.get('ajax') == '1'
 
-    if request.method == 'POST':
-        kw = request.form['keyword']
-        res = newsapi.get_everything(q=kw, language='en', page_size=20, page=page)
-        arts = res['articles']
-        if is_ajax: return {"articles": arts, "heading": f"Search: {kw}"}
-        return render_template('home.html',
-                               title=f"Results for “{kw}”",
-                               heading=f"Search: {kw}",
-                               articles=arts,
-                               current_category=None)
-    else:
-        res = newsapi.get_top_headlines(category=cat, language='en', country='us', page_size=20, page=page)
-        arts = res['articles']
-        if is_ajax: return {"articles": arts, "heading": cat.capitalize()}
-        return render_template('home.html',
-                               title=cat.capitalize(),
-                               heading=cat.capitalize(),
-                               articles=arts,
-                               current_category=cat)
+    try:
+        if request.method == 'POST':
+            kw = request.form['keyword']
+            res = newsapi.get_everything(q=kw, language='en', page_size=20, page=page)
+            arts = res['articles']
+            heading = f"Results for “{kw}”"
+            title = heading
+        else:
+            res = newsapi.get_top_headlines(category=cat, language='en', country='us', page_size=20, page=page)
+            arts = res['articles']
+            heading = cat.capitalize()
+            title = heading
+
+    except Exception as e:
+        # Fallback for Vercel/Cloud IPs (NewsAPI Free Tier blocks cloud IPs)
+        print(f"API Error (using mock data): {e}")
+        arts = [
+            {
+                "source": {"name": "TechCrunch"},
+                "author": "Tech Editor",
+                "title": "The Future of AI: Generative Models Take Center Stage",
+                "description": "Artificial Intelligence is evolving rapidly. New generative models are transforming industries from creative arts to software engineering, marking a new era of automation.",
+                "url": "#",
+                "urlToImage": "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&q=80&w=1600",
+                "publishedAt": "2026-02-08T10:30:00Z",
+                "content": "Full analysis of the AI revolution..."
+            },
+            {
+                "source": {"name": "The Verge"},
+                "author": "Nilay Patel",
+                "title": "Global Markets Rally as Tech Sector Rebounds",
+                "description": "After a volatile quarter, major tech stocks are showing signs of strong recovery, driven by breakthroughs in semiconductor efficiency and cloud computing.",
+                "url": "#",
+                "urlToImage": "https://images.unsplash.com/photo-1611974765270-ca1258634369?auto=format&fit=crop&q=80&w=1600",
+                "publishedAt": "2026-02-08T09:15:00Z",
+                "content": "Market analysis..."
+            },
+            {
+                "source": {"name": "Wired"},
+                "author": "Gadget Lab",
+                "title": "Sustainable Energy: The Shift to Fusion Power",
+                "description": "Scientists achieve net energy gain in nuclear fusion, paving the way for limitless clean energy. Here is what this means for the next decade of power generation.",
+                "url": "#",
+                "urlToImage": "https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?auto=format&fit=crop&q=80&w=1600",
+                "publishedAt": "2026-02-08T08:00:00Z",
+                "content": "Energy breakthrough..."
+            },
+             {
+                "source": {"name": "BBC News"},
+                "author": "Science Team",
+                "title": "SpaceX Starship Successfully Reaches Orbit",
+                "description": "The massive rocket has completed its first full orbital test flight, opening new possibilities for interplanetary travel and heavy payload delivery.",
+                "url": "#",
+                "urlToImage": "https://images.unsplash.com/photo-1517976487492-5750f3195933?auto=format&fit=crop&q=80&w=1600",
+                "publishedAt": "2026-02-08T07:45:00Z",
+                "content": "Space exploration update..."
+            }
+        ]
+        heading = f"Top Stories (Demo Mode)" if request.method == 'GET' else f"Results (Demo Mode)"
+        title = heading
+
+    if is_ajax: return {"articles": arts, "heading": heading}
+    
+    return render_template('home.html',
+                           title=title,
+                           heading=heading,
+                           articles=arts,
+                           current_category=cat if request.method == 'GET' else None)
 @app.route('/bookmarks')
 def bookmarks():
     return render_template('home.html',

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Results for "{{ keyword }}" – NewsFlash{% endblock %}
+
+{% block content %}
+  <h2 class="mb-4">Results for “<span class="text-primary">{{ keyword }}</span>”</h2>
+  {% if articles %}
+    <div class="row row-cols-1 row-cols-md-3 g-4">
+      {% for art in articles %}
+        <div class="col">
+          <div class="card h-100 news-card">
+            {% if art.urlToImage %}
+              <img 
+                src="{{ art.urlToImage }}" 
+                class="card-img-top news-image" 
+                alt="News image"
+              >
+            {% endif %}
+            <div class="card-body d-flex flex-column">
+              <h5 class="card-title">{{ art.title }}</h5>
+              <p class="card-text flex-grow-1">
+                {{ art.description or '' }}
+              </p>
+              <a 
+                href="{{ art.url }}" 
+                target="_blank" 
+                class="btn btn-sm btn-primary mt-2 align-self-start"
+              >
+                Read more
+              </a>
+            </div>
+            <div class="card-footer text-muted small">
+              {{ art.source.name }}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-center">No articles found for “{{ keyword }}”.</p>
+  {% endif %}
+{% endblock %}

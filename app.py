@@ -32,7 +32,7 @@ def home():
                 "author": "Tech Editor",
                 "title": "The Future of AI: Generative Models Take Center Stage",
                 "description": "Artificial Intelligence is evolving rapidly. New generative models are transforming industries from creative arts to software engineering, marking a new era of automation.",
-                "url": "#",
+                "url": "https://techcrunch.com/category/artificial-intelligence/",
                 "urlToImage": "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&q=80&w=1600",
                 "publishedAt": "2026-02-08T10:30:00Z",
                 "content": "Full analysis of the AI revolution..."
@@ -42,7 +42,7 @@ def home():
                 "author": "Nilay Patel",
                 "title": "Global Markets Rally as Tech Sector Rebounds",
                 "description": "After a volatile quarter, major tech stocks are showing signs of strong recovery, driven by breakthroughs in semiconductor efficiency and cloud computing.",
-                "url": "#",
+                "url": "https://www.theverge.com/tech",
                 "urlToImage": "https://images.unsplash.com/photo-1611974765270-ca1258634369?auto=format&fit=crop&q=80&w=1600",
                 "publishedAt": "2026-02-08T09:15:00Z",
                 "content": "Market analysis..."
@@ -52,7 +52,7 @@ def home():
                 "author": "Gadget Lab",
                 "title": "Sustainable Energy: The Shift to Fusion Power",
                 "description": "Scientists achieve net energy gain in nuclear fusion, paving the way for limitless clean energy. Here is what this means for the next decade of power generation.",
-                "url": "#",
+                "url": "https://www.wired.com/category/science/",
                 "urlToImage": "https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?auto=format&fit=crop&q=80&w=1600",
                 "publishedAt": "2026-02-08T08:00:00Z",
                 "content": "Energy breakthrough..."
@@ -62,7 +62,7 @@ def home():
                 "author": "Science Team",
                 "title": "SpaceX Starship Successfully Reaches Orbit",
                 "description": "The massive rocket has completed its first full orbital test flight, opening new possibilities for interplanetary travel and heavy payload delivery.",
-                "url": "#",
+                "url": "https://www.bbc.com/news/science_and_environment",
                 "urlToImage": "https://images.unsplash.com/photo-1517976487492-5750f3195933?auto=format&fit=crop&q=80&w=1600",
                 "publishedAt": "2026-02-08T07:45:00Z",
                 "content": "Space exploration update..."
